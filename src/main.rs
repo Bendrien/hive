@@ -1,17 +1,20 @@
-use core::ops::{Index, IndexMut};
+use core::{
+    mem,
+    ops::{Index, IndexMut},
+};
 
 #[derive(Clone, Copy, Debug)]
 struct NodeIndex(usize);
 
-impl<N> Index<NodeIndex> for Vec<Node<N>> {
-    type Output = Node<N>;
+impl<N> Index<NodeIndex> for Vec<Result<Node<N>, Option<NodeIndex>>> {
+    type Output = Result<Node<N>, Option<NodeIndex>>;
 
     fn index(&self, index: NodeIndex) -> &Self::Output {
         &self[index.0]
     }
 }
 
-impl<N> IndexMut<NodeIndex> for Vec<Node<N>> {
+impl<N> IndexMut<NodeIndex> for Vec<Result<Node<N>, Option<NodeIndex>>> {
     fn index_mut(&mut self, index: NodeIndex) -> &mut Self::Output {
         &mut self[index.0]
     }
@@ -20,15 +23,15 @@ impl<N> IndexMut<NodeIndex> for Vec<Node<N>> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct EdgeIndex(usize);
 
-impl<E> Index<EdgeIndex> for Vec<Edge<E>> {
-    type Output = Edge<E>;
+impl<E> Index<EdgeIndex> for Vec<Result<Edge<E>, Option<EdgeIndex>>> {
+    type Output = Result<Edge<E>, Option<EdgeIndex>>;
 
     fn index(&self, index: EdgeIndex) -> &Self::Output {
         &self[index.0]
     }
 }
 
-impl<E> IndexMut<EdgeIndex> for Vec<Edge<E>> {
+impl<E> IndexMut<EdgeIndex> for Vec<Result<Edge<E>, Option<EdgeIndex>>> {
     fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {
         &mut self[index.0]
     }
@@ -53,21 +56,21 @@ struct Edge<E> {
 
 #[derive(Debug)]
 struct Graph<N, E> {
-    nodes: Vec<Node<N>>,
-    edges: Vec<Edge<E>>,
+    nodes: Vec<Result<Node<N>, Option<NodeIndex>>>,
+    edges: Vec<Result<Edge<E>, Option<EdgeIndex>>>,
 }
 
 impl<N, E> Index<NodeIndex> for Graph<N, E> {
     type Output = Node<N>;
 
     fn index(&self, index: NodeIndex) -> &Self::Output {
-        &self.nodes[index]
+        self.nodes[index].as_ref().unwrap()
     }
 }
 
 impl<N, E> IndexMut<NodeIndex> for Graph<N, E> {
     fn index_mut(&mut self, index: NodeIndex) -> &mut Self::Output {
-        &mut self.nodes[index]
+        self.nodes[index].as_mut().unwrap()
     }
 }
 
@@ -75,13 +78,13 @@ impl<N, E> Index<EdgeIndex> for Graph<N, E> {
     type Output = Edge<E>;
 
     fn index(&self, index: EdgeIndex) -> &Self::Output {
-        &self.edges[index]
+        self.edges[index].as_ref().unwrap()
     }
 }
 
 impl<N, E> IndexMut<EdgeIndex> for Graph<N, E> {
     fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {
-        &mut self.edges[index]
+        self.edges[index].as_mut().unwrap()
     }
 }
 
@@ -95,10 +98,10 @@ impl<N, E> Graph<N, E> {
 
     fn add_node(&mut self, node: N) -> NodeIndex {
         let node_idx = NodeIndex(self.nodes.len());
-        self.nodes.push(Node {
+        self.nodes.push(Ok(Node {
             data: node,
             next: [None; 2],
-        });
+        }));
         node_idx
     }
 
@@ -106,10 +109,10 @@ impl<N, E> Graph<N, E> {
         let edge_idx = EdgeIndex(self.edges.len());
         let src = self[src_idx].next[0].replace(edge_idx).ok_or(src_idx);
         let dst = self[dst_idx].next[1].replace(edge_idx).ok_or(dst_idx);
-        self.edges.push(Edge {
+        self.edges.push(Ok(Edge {
             data: edge,
             next: [src, dst],
-        });
+        }));
         edge_idx
     }
 
@@ -140,8 +143,8 @@ impl<N, E> Graph<N, E> {
             }
         }
 
-        // TODO: Preserve indices!
-        self.edges.remove(idx.0).data
+        // TODO: Cache and recycle freed indices.
+        mem::replace(&mut self.edges[idx], Err(None)).unwrap().data
     }
 }
 
@@ -154,8 +157,10 @@ fn main() {
     let n2 = graph.add_node("2");
     let e0 = graph.add_edge(n0, n2, "0");
     dbg!(&graph);
-    let _e1 = graph.add_edge(n1, n2, "1");
+    let e1 = graph.add_edge(n1, n2, "1");
     dbg!(&graph);
     graph.remove_edge(e0);
+    dbg!(&graph);
+    graph.remove_edge(e1);
     dbg!(&graph);
 }
