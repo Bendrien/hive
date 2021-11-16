@@ -1,27 +1,88 @@
+use core::ops::{Index, IndexMut};
+
 #[derive(Clone, Copy, Debug)]
 struct NodeIndex(usize);
+
+impl<N> Index<NodeIndex> for Vec<Node<N>> {
+    type Output = Node<N>;
+
+    fn index(&self, index: NodeIndex) -> &Self::Output {
+        &self[index.0]
+    }
+}
+
+impl<N> IndexMut<NodeIndex> for Vec<Node<N>> {
+    fn index_mut(&mut self, index: NodeIndex) -> &mut Self::Output {
+        &mut self[index.0]
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct EdgeIndex(usize);
 
+impl<E> Index<EdgeIndex> for Vec<Edge<E>> {
+    type Output = Edge<E>;
+
+    fn index(&self, index: EdgeIndex) -> &Self::Output {
+        &self[index.0]
+    }
+}
+
+impl<E> IndexMut<EdgeIndex> for Vec<Edge<E>> {
+    fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {
+        &mut self[index.0]
+    }
+}
+
+/// Links to the next edge or the associated node at the end of the list
+type NogeIndex = Result<EdgeIndex, NodeIndex>;
+
 #[derive(Debug)]
 struct Node<N> {
     data: N,
-    link: Option<EdgeIndex>,
+    /// [dst, src]
+    next: [Option<EdgeIndex>; 2],
 }
 
 #[derive(Debug)]
 struct Edge<E> {
     data: E,
-    /// Links to the next edge or the destination node at the end
-    link: Result<EdgeIndex, NodeIndex>,
-    node: NodeIndex,
+    /// [src, dst]
+    next: [NogeIndex; 2],
 }
 
 #[derive(Debug)]
 struct Graph<N, E> {
     nodes: Vec<Node<N>>,
     edges: Vec<Edge<E>>,
+}
+
+impl<N, E> Index<NodeIndex> for Graph<N, E> {
+    type Output = Node<N>;
+
+    fn index(&self, index: NodeIndex) -> &Self::Output {
+        &self.nodes[index]
+    }
+}
+
+impl<N, E> IndexMut<NodeIndex> for Graph<N, E> {
+    fn index_mut(&mut self, index: NodeIndex) -> &mut Self::Output {
+        &mut self.nodes[index]
+    }
+}
+
+impl<N, E> Index<EdgeIndex> for Graph<N, E> {
+    type Output = Edge<E>;
+
+    fn index(&self, index: EdgeIndex) -> &Self::Output {
+        &self.edges[index]
+    }
+}
+
+impl<N, E> IndexMut<EdgeIndex> for Graph<N, E> {
+    fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {
+        &mut self.edges[index]
+    }
 }
 
 impl<N, E> Graph<N, E> {
@@ -36,47 +97,51 @@ impl<N, E> Graph<N, E> {
         let node_idx = NodeIndex(self.nodes.len());
         self.nodes.push(Node {
             data: node,
-            link: None,
+            next: [None; 2],
         });
         node_idx
     }
 
     fn add_edge(&mut self, src_idx: NodeIndex, dst_idx: NodeIndex, edge: E) -> EdgeIndex {
         let edge_idx = EdgeIndex(self.edges.len());
-        let dst_node = self.nodes.get_mut(dst_idx.0).unwrap();
+        let src = self[src_idx].next[0].replace(edge_idx).ok_or(src_idx);
+        let dst = self[dst_idx].next[1].replace(edge_idx).ok_or(dst_idx);
         self.edges.push(Edge {
             data: edge,
-            link: dst_node.link.replace(edge_idx).ok_or(dst_idx),
-            node: src_idx,
+            next: [src, dst],
         });
         edge_idx
     }
 
-    fn predecessor(&self, idx: EdgeIndex) -> Result<EdgeIndex, NodeIndex> {
-        let mut tmp = idx;
-        loop {
-            let link = self.edges[tmp.0].link;
-            let edge_idx = link.unwrap_or_else(|idx| self.nodes[idx.0].link.unwrap());
-            if edge_idx == idx {
-                return link;
-            }
-            tmp = edge_idx;
+    fn next(&self, noge_idx: NogeIndex, dir: usize) -> NogeIndex {
+        match noge_idx {
+            Ok(edge_idx) => self[edge_idx].next[dir],
+            Err(node_idx) => Ok(self[node_idx].next[dir].unwrap()),
         }
     }
 
-    fn remove_edge(&mut self, idx: EdgeIndex) -> Option<E> {
-        match self.edges[idx.0].link {
-            Ok(successor_idx) => match self.predecessor(idx) {
-                Ok(edge_idx) => self.edges[edge_idx.0].link = Ok(successor_idx),
-                Err(node_idx) => self.nodes[node_idx.0].link = Some(successor_idx),
-            },
-            Err(node_idx) => match self.predecessor(idx) {
-                Ok(edge_idx) => self.edges[edge_idx.0].link = Err(node_idx),
-                Err(node_idx) => self.nodes[node_idx.0].link = None,
-            },
+    fn prior(&self, idx: EdgeIndex, dir: usize) -> NogeIndex {
+        let mut next = self[idx].next[dir];
+        loop {
+            next = match (next, self.next(next, dir)) {
+                (next, Ok(edge_idx)) if edge_idx == idx => return next,
+                (_, next) => next,
+            }
         }
+    }
+
+    fn remove_edge(&mut self, idx: EdgeIndex) -> E {
+        for dir in 0..2 {
+            match (self.prior(idx, dir), self[idx].next[dir]) {
+                (Ok(prior_idx), Ok(next_idx)) => self[prior_idx].next[dir] = Ok(next_idx),
+                (Ok(prior_idx), Err(next_idx)) => self[prior_idx].next[dir] = Err(next_idx),
+                (Err(prior_idx), Ok(next_idx)) => self[prior_idx].next[dir] = Some(next_idx),
+                (Err(prior_idx), Err(_next_idx)) => self[prior_idx].next[dir] = None,
+            }
+        }
+
         // TODO: Preserve indices!
-        Some(self.edges.remove(idx.0).data)
+        self.edges.remove(idx.0).data
     }
 }
 
@@ -84,12 +149,13 @@ fn main() {
     println!("Hello, hive!");
 
     let mut graph = Graph::new();
-    let n1 = graph.add_node(());
-    let n2 = graph.add_node(());
-    let n3 = graph.add_node(());
-    let e1 = graph.add_edge(n1, n3, ());
-    let _e2 = graph.add_edge(n2, n3, ());
+    let n0 = graph.add_node("0");
+    let n1 = graph.add_node("1");
+    let n2 = graph.add_node("2");
+    let e0 = graph.add_edge(n0, n2, "0");
     dbg!(&graph);
-    graph.remove_edge(e1);
+    let _e1 = graph.add_edge(n1, n2, "1");
+    dbg!(&graph);
+    graph.remove_edge(e0);
     dbg!(&graph);
 }
