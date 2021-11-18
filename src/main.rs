@@ -42,20 +42,21 @@ type NogeIndex = Result<EdgeIndex, NodeIndex>;
 
 #[derive(Debug)]
 struct Node<N> {
-    data: N,
     /// [dst, src]
     next: [Option<EdgeIndex>; 2],
+    data: N,
 }
 
 #[derive(Debug)]
 struct Edge<E> {
-    data: E,
     /// [src, dst]
     next: [NogeIndex; 2],
+    data: E,
 }
 
 #[derive(Debug)]
 struct Graph<N, E> {
+    // TODO: Cache and recycle freed indices in Err(Some(cache)).
     nodes: Vec<Result<Node<N>, Option<NodeIndex>>>,
     edges: Vec<Result<Edge<E>, Option<EdgeIndex>>>,
 }
@@ -133,18 +134,29 @@ impl<N, E> Graph<N, E> {
         }
     }
 
+    fn unchain(&mut self, idx: EdgeIndex, dir: usize) {
+        match (self.prior(idx, dir), self[idx].next[dir]) {
+            (Ok(src_idx), dst_idx) => self[src_idx].next[dir] = dst_idx,
+            (Err(src_idx), dst_idx) => self[src_idx].next[dir] = dst_idx.ok(),
+        }
+    }
+
     fn remove_edge(&mut self, idx: EdgeIndex) -> E {
         for dir in 0..2 {
-            match (self.prior(idx, dir), self[idx].next[dir]) {
-                (Ok(prior_idx), Ok(next_idx)) => self[prior_idx].next[dir] = Ok(next_idx),
-                (Ok(prior_idx), Err(next_idx)) => self[prior_idx].next[dir] = Err(next_idx),
-                (Err(prior_idx), Ok(next_idx)) => self[prior_idx].next[dir] = Some(next_idx),
-                (Err(prior_idx), Err(_next_idx)) => self[prior_idx].next[dir] = None,
+            self.unchain(idx, dir);
+        }
+        mem::replace(&mut self.edges[idx], Err(None)).unwrap().data
+    }
+
+    fn remove_node(&mut self, idx: NodeIndex) -> N {
+        for dir in 0..2 {
+            while let Some(edge_idx) = self[idx].next[dir] {
+                self[idx].next[dir] = self[edge_idx].next[dir].ok();
+                self.unchain(edge_idx, dir ^ 1);
+                self.edges[edge_idx] = Err(None);
             }
         }
-
-        // TODO: Cache and recycle freed indices.
-        mem::replace(&mut self.edges[idx], Err(None)).unwrap().data
+        mem::replace(&mut self.nodes[idx], Err(None)).unwrap().data
     }
 }
 
@@ -155,12 +167,18 @@ fn main() {
     let n0 = graph.add_node("0");
     let n1 = graph.add_node("1");
     let n2 = graph.add_node("2");
-    let e0 = graph.add_edge(n0, n2, "0");
+    let n3 = graph.add_node("3");
+    let n4 = graph.add_node("4");
+
+    let _e0 = graph.add_edge(n0, n2, "02");
+    let _e1 = graph.add_edge(n1, n2, "12");
+    let e04 = graph.add_edge(n0, n4, "04");
+    let _e3 = graph.add_edge(n2, n3, "23");
+    let _e4 = graph.add_edge(n2, n4, "24");
+
     dbg!(&graph);
-    let e1 = graph.add_edge(n1, n2, "1");
+    graph.remove_edge(e04);
     dbg!(&graph);
-    graph.remove_edge(e0);
-    dbg!(&graph);
-    graph.remove_edge(e1);
+    graph.remove_node(n2);
     dbg!(&graph);
 }
