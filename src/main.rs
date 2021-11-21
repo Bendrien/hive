@@ -19,6 +19,8 @@ fn main() {
     let _e4 = graph.add_edge(n2, n4, "24");
 
     graph.neighbors(n2, 0).for_each(|idx| print!("{:?}, ", idx));
+    println!();
+    graph.edges(n4, 1).for_each(|idx| print!("{:?}, ", idx));
 
     dbg!(&graph);
     graph.remove_edge(e04);

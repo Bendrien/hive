@@ -159,12 +159,38 @@ impl<N, E> Graph<N, E> {
         mem::replace(&mut self.nodes[idx], Err(None)).unwrap().data
     }
 
+    pub fn edges(&self, idx: NodeIndex, dir: usize) -> Edges<'_, E> {
+        Edges {
+            edges: &self.edges,
+            next: self[idx].next[dir],
+            dir,
+        }
+    }
+
     pub fn neighbors(&self, idx: NodeIndex, dir: usize) -> Neighbors<'_, E> {
         Neighbors {
             edges: &self.edges,
             next: self[idx].next[dir],
             dir,
         }
+    }
+}
+
+pub struct Edges<'a, E> {
+    edges: &'a [Result<Edge<E>, Option<EdgeIndex>>],
+    next: Option<EdgeIndex>,
+    dir: usize,
+}
+
+impl<E> Iterator for Edges<'_, E> {
+    type Item = EdgeIndex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(idx) = self.next {
+            self.next = self.edges[idx.0].as_ref().unwrap().next[self.dir].ok();
+            return Some(idx);
+        }
+        None
     }
 }
 
