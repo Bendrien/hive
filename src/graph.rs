@@ -2,8 +2,9 @@ use core::{
     mem,
     ops::{Index, IndexMut},
 };
+use std::collections::{HashSet, VecDeque};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeIndex(usize);
 
 impl<N> Index<NodeIndex> for Vec<Result<Node<N>, Option<NodeIndex>>> {
@@ -117,8 +118,8 @@ impl<N, E> Graph<N, E> {
         edge_idx
     }
 
-    fn next(&self, noge_idx: NogeIndex, dir: usize) -> NogeIndex {
-        match noge_idx {
+    fn next(&self, idx: NogeIndex, dir: usize) -> NogeIndex {
+        match idx {
             Ok(edge_idx) => self[edge_idx].next[dir],
             Err(node_idx) => Ok(self[node_idx].next[dir].unwrap()),
         }
@@ -174,6 +175,20 @@ impl<N, E> Graph<N, E> {
             dir,
         }
     }
+
+    pub fn bfs(&self, idx: NodeIndex, dir: usize) -> Bfs<'_, N, E> {
+        let mut queue = VecDeque::new();
+        let mut visited = HashSet::new();
+        queue.push_front(idx);
+        visited.insert(idx);
+
+        Bfs {
+            graph: &self,
+            queue,
+            visited,
+            dir,
+        }
+    }
 }
 
 pub struct Edges<'a, E> {
@@ -213,7 +228,32 @@ impl<E> Iterator for Neighbors<'_, E> {
             while let Ok(next_idx) = next {
                 next = self.edges[next_idx.0].as_ref().unwrap().next[node_dir];
             }
+
             return next.err();
+        }
+        None
+    }
+}
+
+pub struct Bfs<'a, N, E> {
+    graph: &'a Graph<N, E>,
+    queue: VecDeque<NodeIndex>,
+    visited: HashSet<NodeIndex>,
+    dir: usize,
+}
+
+impl<N, E> Iterator for Bfs<'_, N, E> {
+    type Item = NodeIndex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(idx) = self.queue.pop_front() {
+            for neighbor in self.graph.neighbors(idx, self.dir) {
+                if self.visited.insert(neighbor) {
+                    self.queue.push_back(neighbor);
+                }
+            }
+
+            return Some(idx);
         }
         None
     }
