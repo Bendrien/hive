@@ -2,7 +2,7 @@ use core::{
     mem,
     ops::{Index, IndexMut},
 };
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeIndex(usize);
@@ -160,6 +160,30 @@ impl<N, E> Graph<N, E> {
         mem::replace(&mut self.nodes[idx], Err(None)).unwrap().data
     }
 
+    /// Gather traversal information with respect to the given node and direction.
+    pub fn schedule(&self, idx: NodeIndex, dir: usize) -> HashMap<NodeIndex, ScheduleInfo> {
+        let mut queue = VecDeque::new();
+        let mut schedule = HashMap::new();
+        queue.push_front((idx, 0));
+        schedule.insert(idx, ScheduleInfo::new(0, self.edges(idx, dir).count(), dir));
+
+        while let Some((idx, stage)) = queue.pop_front() {
+            if self[idx].next[dir].is_some() {
+                let next_stage = stage + 1;
+                for neighbor in self.neighbors(idx, dir) {
+                    schedule
+                        .entry(neighbor)
+                        .and_modify(|info| info.update(next_stage, dir))
+                        .or_insert_with(|| {
+                            queue.push_back((neighbor, next_stage));
+                            ScheduleInfo::new(next_stage, self.edges(neighbor, dir).count(), dir)
+                        });
+                }
+            }
+        }
+        return schedule;
+    }
+
     pub fn edges(&self, idx: NodeIndex, dir: usize) -> Edges<'_, E> {
         Edges {
             edges: &self.edges,
@@ -188,6 +212,28 @@ impl<N, E> Graph<N, E> {
             visited,
             dir,
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct ScheduleInfo {
+    stage: usize,
+    count: [usize; 2],
+}
+
+impl ScheduleInfo {
+    fn new(stage: usize, count: usize, dir: usize) -> Self {
+        let mut info = ScheduleInfo {
+            count: [0; 2],
+            stage,
+        };
+        info.count[dir] = count;
+        info
+    }
+
+    fn update(&mut self, stage: usize, dir: usize) {
+        self.stage = stage;
+        self.count[dir ^ 1] += 1;
     }
 }
 
