@@ -55,7 +55,6 @@ pub struct Edge<E> {
     data: E,
 }
 
-#[derive(Debug)]
 pub struct Graph<N, E> {
     // TODO: Cache and recycle freed indices in Err(Some(cache)).
     nodes: Vec<Result<Node<N>, Option<NodeIndex>>>,
@@ -87,6 +86,39 @@ impl<N, E> Index<EdgeIndex> for Graph<N, E> {
 impl<N, E> IndexMut<EdgeIndex> for Graph<N, E> {
     fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {
         self.edges[index].as_mut().unwrap()
+    }
+}
+
+impl<N, E> std::fmt::Debug for Graph<N, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const DIR_STR: [&str; 2] = [">", "<"];
+        f.write_fmt(format_args!(
+            "{}/{}|{}/{}\n",
+            self.nodes.iter().filter(|n| n.is_ok()).count(),
+            self.nodes.len(),
+            self.edges.iter().filter(|n| n.is_ok()).count(),
+            self.edges.len(),
+        ))?;
+        for dir in 0..2 {
+            for idx in 0..self.nodes.len() {
+                if let Err(_) = self.nodes[idx] {
+                    continue;
+                }
+                let neighbors: Vec<_> = self.neighbors(NodeIndex(idx), dir).collect();
+                if neighbors.is_empty() {
+                    continue;
+                }
+                f.write_fmt(format_args!("{idx} {}", DIR_STR[dir]))?;
+                let last_idx = neighbors.len() - 1;
+                for (idx, (NodeIndex(node), EdgeIndex(edge))) in neighbors.into_iter().enumerate() {
+                    f.write_fmt(format_args!(
+                        " {node}|{edge}{}",
+                        if idx == last_idx { "\n" } else { "," }
+                    ))?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
