@@ -170,7 +170,7 @@ impl<N, E> Graph<N, E> {
         while let Some((idx, stage)) = queue.pop_front() {
             if self[idx].next[dir].is_some() {
                 let next_stage = stage + 1;
-                for neighbor in self.neighbors(idx, dir) {
+                for (neighbor, _) in self.neighbors(idx, dir) {
                     schedule
                         .entry(neighbor)
                         .and_modify(|info| info.update(next_stage, dir))
@@ -194,9 +194,7 @@ impl<N, E> Graph<N, E> {
 
     pub fn neighbors(&self, idx: NodeIndex, dir: usize) -> Neighbors<'_, E> {
         Neighbors {
-            edges: &self.edges,
-            next: self[idx].next[dir],
-            dir,
+            iter: self.edges(idx, dir),
         }
     }
 
@@ -256,26 +254,22 @@ impl<E> Iterator for Edges<'_, E> {
 }
 
 pub struct Neighbors<'a, E> {
-    edges: &'a [Result<Edge<E>, Option<EdgeIndex>>],
-    next: Option<EdgeIndex>,
-    dir: usize,
+    iter: Edges<'a, E>,
 }
 
 impl<E> Iterator for Neighbors<'_, E> {
-    type Item = NodeIndex;
+    type Item = (NodeIndex, EdgeIndex);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(idx) = self.next {
-            self.next = self.edges[idx.0].as_ref().unwrap().next[self.dir].ok();
-
+        if let Some(edge_idx) = self.iter.next() {
             // Follow the other edge list until reaching its end, holding the node index
-            let node_dir = self.dir ^ 1;
-            let mut next = self.edges[idx.0].as_ref().unwrap().next[node_dir];
+            let node_dir = self.iter.dir ^ 1;
+            let mut next = self.iter.edges[edge_idx.0].as_ref().unwrap().next[node_dir];
             while let Ok(next_idx) = next {
-                next = self.edges[next_idx.0].as_ref().unwrap().next[node_dir];
+                next = self.iter.edges[next_idx.0].as_ref().unwrap().next[node_dir];
             }
 
-            return next.err();
+            return next.err().map(|node_idx| (node_idx, edge_idx));
         }
         None
     }
@@ -293,7 +287,7 @@ impl<N, E> Iterator for Bfs<'_, N, E> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(idx) = self.queue.pop_front() {
-            for neighbor in self.graph.neighbors(idx, self.dir) {
+            for (neighbor, _) in self.graph.neighbors(idx, self.dir) {
                 if self.visited.insert(neighbor) {
                     self.queue.push_back(neighbor);
                 }
