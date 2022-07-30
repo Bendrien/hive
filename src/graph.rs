@@ -7,15 +7,15 @@ use std::collections::{HashMap, HashSet, VecDeque};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeIndex(usize);
 
-impl<N> Index<NodeIndex> for Vec<Result<Node<N>, Option<NodeIndex>>> {
-    type Output = Result<Node<N>, Option<NodeIndex>>;
+impl<N> Index<NodeIndex> for Vec<Result<Node<N>, ()>> {
+    type Output = Result<Node<N>, ()>;
 
     fn index(&self, index: NodeIndex) -> &Self::Output {
         &self[index.0]
     }
 }
 
-impl<N> IndexMut<NodeIndex> for Vec<Result<Node<N>, Option<NodeIndex>>> {
+impl<N> IndexMut<NodeIndex> for Vec<Result<Node<N>, ()>> {
     fn index_mut(&mut self, index: NodeIndex) -> &mut Self::Output {
         &mut self[index.0]
     }
@@ -24,15 +24,15 @@ impl<N> IndexMut<NodeIndex> for Vec<Result<Node<N>, Option<NodeIndex>>> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EdgeIndex(usize);
 
-impl<E> Index<EdgeIndex> for Vec<Result<Edge<E>, Option<EdgeIndex>>> {
-    type Output = Result<Edge<E>, Option<EdgeIndex>>;
+impl<E> Index<EdgeIndex> for Vec<Result<Edge<E>, ()>> {
+    type Output = Result<Edge<E>, ()>;
 
     fn index(&self, index: EdgeIndex) -> &Self::Output {
         &self[index.0]
     }
 }
 
-impl<E> IndexMut<EdgeIndex> for Vec<Result<Edge<E>, Option<EdgeIndex>>> {
+impl<E> IndexMut<EdgeIndex> for Vec<Result<Edge<E>, ()>> {
     fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {
         &mut self[index.0]
     }
@@ -56,9 +56,12 @@ pub struct Edge<E> {
 }
 
 pub struct Graph<N, E> {
-    // TODO: Cache and recycle freed indices in Err(Some(cache)).
-    nodes: Vec<Result<Node<N>, Option<NodeIndex>>>,
-    edges: Vec<Result<Edge<E>, Option<EdgeIndex>>>,
+    // TODO: Cache and recycle freed indices via Error type.
+    // Turn Error type into Option(Index) and add additional
+    // Option(Index) cache members. Introduce generation
+    // concept to deny false usage of obsolete Index handles.
+    nodes: Vec<Result<Node<N>, ()>>,
+    edges: Vec<Result<Edge<E>, ()>>,
 }
 
 impl<N, E> Index<NodeIndex> for Graph<N, E> {
@@ -178,7 +181,7 @@ impl<N, E> Graph<N, E> {
         for dir in 0..2 {
             self.unchain(idx, dir);
         }
-        mem::replace(&mut self.edges[idx], Err(None)).unwrap().data
+        mem::replace(&mut self.edges[idx], Err(())).unwrap().data
     }
 
     pub fn remove_node(&mut self, idx: NodeIndex) -> N {
@@ -186,10 +189,10 @@ impl<N, E> Graph<N, E> {
             while let Some(edge_idx) = self[idx].next[dir] {
                 self[idx].next[dir] = self[edge_idx].next[dir].ok();
                 self.unchain(edge_idx, dir ^ 1);
-                self.edges[edge_idx] = Err(None);
+                self.edges[edge_idx] = Err(());
             }
         }
-        mem::replace(&mut self.nodes[idx], Err(None)).unwrap().data
+        mem::replace(&mut self.nodes[idx], Err(())).unwrap().data
     }
 
     /// Gather traversal information with respect to the given node and direction.
@@ -268,7 +271,7 @@ impl ScheduleInfo {
 }
 
 pub struct Edges<'a, E> {
-    edges: &'a [Result<Edge<E>, Option<EdgeIndex>>],
+    edges: &'a [Result<Edge<E>, ()>],
     next: Option<EdgeIndex>,
     dir: usize,
 }
