@@ -5,7 +5,7 @@ use core::{
 use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct NodeIndex(usize);
+pub struct NodeIndex(pub(crate) usize);
 
 impl<N> Index<NodeIndex> for Vec<Result<Node<N>, ()>> {
     type Output = Result<Node<N>, ()>;
@@ -22,7 +22,7 @@ impl<N> IndexMut<NodeIndex> for Vec<Result<Node<N>, ()>> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct EdgeIndex(usize);
+pub struct EdgeIndex(pub(crate) usize);
 
 impl<E> Index<EdgeIndex> for Vec<Result<Edge<E>, ()>> {
     type Output = Result<Edge<E>, ()>;
@@ -55,6 +55,7 @@ pub struct Edge<E> {
     data: E,
 }
 
+#[derive(Default)]
 pub struct Graph<N, E> {
     // TODO: Cache and recycle freed indices via Error type.
     // Turn Error type into Option(Index) and add additional
@@ -126,13 +127,6 @@ impl<N, E> std::fmt::Debug for Graph<N, E> {
 }
 
 impl<N, E> Graph<N, E> {
-    pub fn new() -> Self {
-        Self {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-        }
-    }
-
     pub fn add_node(&mut self, node: N) -> NodeIndex {
         let node_idx = NodeIndex(self.nodes.len());
         self.nodes.push(Ok(Node {
@@ -177,14 +171,21 @@ impl<N, E> Graph<N, E> {
         }
     }
 
-    pub fn remove_edge(&mut self, idx: EdgeIndex) -> E {
+    pub(crate) fn remove_edge_unchecked(&mut self, idx: EdgeIndex) -> E {
         for dir in 0..2 {
             self.unchain(idx, dir);
         }
         mem::replace(&mut self.edges[idx], Err(())).unwrap().data
     }
 
-    pub fn remove_node(&mut self, idx: NodeIndex) -> N {
+    pub fn remove_edge(&mut self, idx: EdgeIndex) -> Option<E> {
+        if idx.0 < self.edges.len() && self.nodes[idx.0].is_ok() {
+            return Some(self.remove_edge_unchecked(idx));
+        }
+        None
+    }
+
+    pub(crate) fn remove_node_unchecked(&mut self, idx: NodeIndex) -> N {
         for dir in 0..2 {
             while let Some(edge_idx) = self[idx].next[dir] {
                 self[idx].next[dir] = self[edge_idx].next[dir].ok();
@@ -193,6 +194,13 @@ impl<N, E> Graph<N, E> {
             }
         }
         mem::replace(&mut self.nodes[idx], Err(())).unwrap().data
+    }
+
+    pub fn remove_node(&mut self, idx: NodeIndex) -> Option<N> {
+        if idx.0 < self.nodes.len() && self.edges[idx.0].is_ok() {
+            return Some(self.remove_node_unchecked(idx));
+        }
+        None
     }
 
     /// Gather traversal information with respect to the given node and direction.

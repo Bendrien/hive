@@ -1,32 +1,44 @@
 mod graph;
+mod hive;
 
-use crate::graph::Graph;
+use std::io::Write;
+
+use hive::Hive;
 
 fn main() {
-    println!("Hello, hive!");
+    let mut hive = Hive::default();
+    loop {
+        let input = {
+            print!("» ");
+            let mut line = String::new();
+            std::io::stdout().flush().unwrap();
+            std::io::stdin()
+                .read_line(&mut line)
+                .expect("Error: Could not read a line");
+            line.trim().to_string()
+        };
 
-    let mut graph = Graph::new();
-    let n0 = graph.add_node("0");
-    let n1 = graph.add_node("1");
-    let n2 = graph.add_node("2");
-    let n3 = graph.add_node("3");
-    let n4 = graph.add_node("4");
+        let args = input.split(' ').collect::<Vec<_>>();
+        let mut ignored = Vec::new();
 
-    let _e0 = graph.add_edge(n0, n2, "02");
-    let _e1 = graph.add_edge(n1, n2, "12");
-    let e04 = graph.add_edge(n0, n4, "04");
-    let _e3 = graph.add_edge(n2, n3, "23");
-    let _e4 = graph.add_edge(n2, n4, "24");
-
-    graph.neighbors(n2, 0).for_each(|idx| print!("{:?}, ", idx));
-    println!();
-    graph.edges(n4, 1).for_each(|idx| print!("{:?}, ", idx));
-    println!();
-    graph.bfs(n0, 0).for_each(|idx| print!("{:?}, ", idx));
-
-    dbg!(&graph);
-    graph.remove_edge(e04);
-    dbg!(&graph);
-    graph.remove_node(n2);
-    dbg!(&graph);
+        let mut args = &args[..];
+        loop {
+            args = match *hive.parse(args) {
+                [] => {
+                    if !ignored.is_empty() {
+                        println!("Ignored input {:?}", ignored);
+                        ignored.clear();
+                    }
+                    print!("{:?}", hive);
+                    break;
+                }
+                ["q" | "quit", ..] => return,
+                [ref xs @ ..] if xs.len() != args.len() => xs,
+                [ignore, ref xs @ ..] => {
+                    ignored.push(ignore);
+                    xs
+                }
+            }
+        }
+    }
 }
