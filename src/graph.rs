@@ -128,22 +128,42 @@ impl<N, E> std::fmt::Debug for Graph<N, E> {
 
 impl<N, E> Graph<N, E> {
     pub fn add_node(&mut self, node: N) -> NodeIndex {
-        let node_idx = NodeIndex(self.nodes.len());
-        self.nodes.push(Ok(Node {
+        let node_idx = NodeIndex(
+            self.nodes
+                .iter()
+                .position(Result::is_err)
+                .unwrap_or(self.nodes.len()),
+        );
+        let node = Ok(Node {
             data: node,
             next: [None; 2],
-        }));
+        });
+        if node_idx.0 == self.nodes.len() {
+            self.nodes.push(node)
+        } else {
+            self.nodes[node_idx.0] = node
+        }
         node_idx
     }
 
     pub fn add_edge(&mut self, src_idx: NodeIndex, dst_idx: NodeIndex, edge: E) -> EdgeIndex {
-        let edge_idx = EdgeIndex(self.edges.len());
+        let edge_idx = EdgeIndex(
+            self.edges
+                .iter()
+                .position(Result::is_err)
+                .unwrap_or(self.edges.len()),
+        );
         let src = self[src_idx].next[0].replace(edge_idx).ok_or(src_idx);
         let dst = self[dst_idx].next[1].replace(edge_idx).ok_or(dst_idx);
-        self.edges.push(Ok(Edge {
+        let edge = Ok(Edge {
             data: edge,
             next: [src, dst],
-        }));
+        });
+        if edge_idx.0 == self.edges.len() {
+            self.edges.push(edge)
+        } else {
+            self.edges[edge_idx.0] = edge
+        }
         edge_idx
     }
 
@@ -169,6 +189,25 @@ impl<N, E> Graph<N, E> {
             (Ok(src_idx), dst_idx) => self[src_idx].next[dir] = dst_idx,
             (Err(src_idx), dst_idx) => self[src_idx].next[dir] = dst_idx.ok(),
         }
+    }
+
+    pub(crate) fn src_dst(&mut self, idx: EdgeIndex) -> Option<[NodeIndex; 2]> {
+        self.edges.get(idx.0).and_then(|r| {
+            r.as_ref().ok().and_then(|edge| {
+                edge.next
+                    .into_iter()
+                    .enumerate()
+                    .map(|(dir, mut noge)| {
+                        while let Ok(edge) = noge {
+                            noge = self[edge].next[dir];
+                        }
+                        noge.unwrap_err()
+                    })
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .ok()
+            })
+        })
     }
 
     pub(crate) fn remove_edge_unchecked(&mut self, idx: EdgeIndex) -> E {
