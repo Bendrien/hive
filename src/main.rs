@@ -19,9 +19,10 @@ fn main() {
         };
 
         let args = input.split(' ').collect::<Vec<_>>();
+        let mut args = &args[..];
         let mut ignored = Vec::new();
 
-        let mut args = &args[..];
+        let snapshot = hive.undo.snapshot();
         loop {
             args = match *hive.parse(args) {
                 [] => {
@@ -29,7 +30,6 @@ fn main() {
                         println!("Ignored input {:?}", ignored);
                         ignored.clear();
                     }
-                    print!("{:?}", hive);
                     break;
                 }
                 ["q" | "quit", ..] => return,
@@ -40,5 +40,7 @@ fn main() {
                 }
             }
         }
+        hive.undo.pile(snapshot);
+        print!("{:?}", hive);
     }
 }

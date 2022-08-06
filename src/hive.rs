@@ -6,18 +6,18 @@ use crate::graph::{EdgeIndex, Graph, NodeIndex};
 pub struct Hive {
     graph: Graph<(), ()>,
     nodes: HashMap<String, NodeIndex>,
-    undo: Undo,
+    pub undo: Undo,
 }
 
 #[derive(Default)]
-struct Undo {
+pub struct Undo {
     history: Vec<Rc<dyn Fn(&mut Hive)>>,
     pos: usize,
 }
 
 impl Undo {
     fn track(&mut self, action: Rc<dyn Fn(&mut Hive)>) {
-        if self.pos >= self.history.len() {
+        if self.pos == self.history.len() {
             self.pos = self.history.len() + 1
         }
         self.history.push(action);
@@ -27,23 +27,27 @@ impl Undo {
         self.pos = self.history.len();
     }
 
-    fn snapshot(&self) -> usize {
+    pub fn snapshot(&self) -> usize {
         self.history.len()
     }
 
-    fn pile(&mut self, snapshot: usize) {
+    pub fn pile(&mut self, snapshot: usize) {
         if self.history.len() < 2 || self.snapshot().saturating_sub(snapshot) < 2 {
+            // Building a pile with less then 2 elements equals doing nothing here.
             return;
         }
 
         let pile = self.history.split_off(snapshot);
-        self.track(Rc::new(move |hive| {
+        self.history.push(Rc::new(move |hive| {
             let snapshot = hive.undo.snapshot();
             for action in pile.iter().rev() {
                 action(hive)
             }
             hive.undo.pile(snapshot);
-        }))
+        }));
+        if self.pos > self.history.len() {
+            self.pos = self.history.len()
+        }
     }
 }
 
@@ -98,7 +102,8 @@ impl Hive {
             }
             ["p" | "pile", n, ref xs @ ..] => {
                 if let Ok(n) = n.parse() {
-                    self.undo.pile(self.undo.snapshot().saturating_sub(n));
+                    let snapshot = self.undo.snapshot();
+                    self.undo.pile(snapshot.saturating_sub(n));
                     return xs;
                 }
                 args
