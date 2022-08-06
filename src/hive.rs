@@ -13,10 +13,16 @@ pub struct Hive {
 pub struct Undo {
     history: Vec<Rc<dyn Fn(&mut Hive)>>,
     pos: usize,
+    redo: bool,
 }
 
 impl Undo {
     fn track(&mut self, action: Rc<dyn Fn(&mut Hive)>) {
+        if self.redo {
+            // While "redoing" we ignore all the implicitly incoming undo of the redo actions!
+            // Question: Provide action as a generic/impl argument to avoid heap allocation?
+            return;
+        }
         if self.pos == self.history.len() {
             self.pos = self.history.len() + 1
         }
@@ -36,6 +42,7 @@ impl Undo {
             // Building a pile with less then 2 elements equals doing nothing here.
             return;
         }
+        assert!(!self.redo);
 
         let pile = self.history.split_off(snapshot);
         self.history.push(Rc::new(move |hive| {
@@ -71,33 +78,47 @@ impl Hive {
                 let dst = *self.add_node(dst);
                 self.add_edge(src, dst);
                 self.undo.pile(snapshot);
+                self.undo.reset();
                 xs
             }
             ["d" | "delete", ident, ref xs @ ..] => {
                 if let Ok(idx) = ident.parse() {
                     if self.remove_edge(EdgeIndex(idx)) {
+                        self.undo.reset();
                         println!("Removed edge {idx}");
                         return xs;
                     }
                 }
 
                 if self.remove_node(ident) {
+                    self.undo.reset();
                     println!("Removed node {ident}");
                     return xs;
                 }
                 args
             }
             ["u" | "undo", ref xs @ ..] => {
-                if let Some(idx) = self.undo.pos.checked_sub(1) {
-                    self.undo.history[idx].clone()(self);
-                    self.undo.pos = idx;
+                if let Some(pos) = self.undo.pos.checked_sub(1) {
+                    self.undo.history[pos].clone()(self);
+                    self.undo.pos = pos;
                 } else {
                     println!("Nothing to undo")
                 }
                 xs
             }
-            ["r" | "reset", ref xs @ ..] => {
-                self.undo.reset();
+            ["r" | "redo", ref xs @ ..] => {
+                let pos = self.undo.pos + 1;
+                if pos < self.undo.history.len() {
+                    self.undo.redo = true;
+                    // The most recent undo of an undo aka redo is being tracked at the end of the history!
+                    // Its origin is still available at idx and has the same effect. Therefore we can remove
+                    // the redo from the history here.
+                    self.undo.history.pop().unwrap()(self);
+                    self.undo.redo = false;
+                    self.undo.pos = pos;
+                } else {
+                    println!("Nothing to redo")
+                }
                 xs
             }
             ["p" | "pile", n, ref xs @ ..] => {
