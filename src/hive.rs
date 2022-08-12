@@ -58,17 +58,6 @@ impl Undo {
     }
 }
 
-impl Debug for Hive {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{}/{}|{:?}",
-            self.undo.pos,
-            self.undo.history.len(),
-            self.graph
-        ))
-    }
-}
-
 impl Hive {
     pub fn parse<'a>(&mut self, args: &'a [&'a str]) -> &'a [&'a str] {
         match *args {
@@ -181,5 +170,52 @@ impl Hive {
             return true;
         }
         false
+    }
+}
+
+impl Debug for Hive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const DIR_STR: [&str; 2] = [">", "<"];
+        f.write_fmt(format_args!(
+            "{}/{}|{}/{}|{}/{}\n",
+            self.undo.pos,
+            self.undo.history.len(),
+            self.graph.nodes.iter().filter(|n| n.is_ok()).count(),
+            self.graph.nodes.len(),
+            self.graph.edges.iter().filter(|n| n.is_ok()).count(),
+            self.graph.edges.len(),
+        ))?;
+        for dir in 0..1 {
+            for idx in 0..self.graph.nodes.len() {
+                if self.graph.nodes[idx].is_err() {
+                    continue;
+                }
+                let neighbors: Vec<_> = self.graph.neighbors(NodeIndex(idx), dir).collect();
+                if neighbors.is_empty() {
+                    continue;
+                }
+                let idx = self
+                    .nodes
+                    .iter()
+                    .find(|(_, node)| node.0 == idx)
+                    .map(|(ident, _)| ident)
+                    .unwrap();
+                f.write_fmt(format_args!("{idx} {}", DIR_STR[dir]))?;
+                let last_idx = neighbors.len() - 1;
+                for (idx, (NodeIndex(node), EdgeIndex(edge))) in neighbors.into_iter().enumerate() {
+                    let node = self
+                        .nodes
+                        .iter()
+                        .find(|(_, idx)| node == idx.0)
+                        .map(|(ident, _)| ident)
+                        .unwrap();
+                    f.write_fmt(format_args!(
+                        " {node}|{edge}{}",
+                        if idx == last_idx { "\n" } else { "," }
+                    ))?;
+                }
+            }
+        }
+        Ok(())
     }
 }
