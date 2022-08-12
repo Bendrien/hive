@@ -85,14 +85,14 @@ impl Hive {
                 if let Ok(idx) = ident.parse() {
                     if self.remove_edge(EdgeIndex(idx)) {
                         self.undo.reset();
-                        println!("Removed edge {idx}");
                         return xs;
                     }
                 }
 
+                let snapshot = self.undo.snapshot();
                 if self.remove_node(ident) {
+                    self.undo.pile(snapshot);
                     self.undo.reset();
-                    println!("Removed node {ident}");
                     return xs;
                 }
                 args
@@ -147,6 +147,13 @@ impl Hive {
 
     fn remove_node(&mut self, node: &str) -> bool {
         if let Some(idx) = self.nodes.remove(node) {
+            let mut edges = (0..2)
+                .flat_map(|dir| self.graph.edges(idx, dir))
+                .collect::<Vec<_>>();
+            edges.sort();
+            for edge in edges.into_iter().rev() {
+                self.remove_edge(edge);
+            }
             let _node = self.graph.remove_node_unchecked(idx);
             self.undo.track(Rc::new({
                 let node = node.to_string();
@@ -162,8 +169,7 @@ impl Hive {
     fn add_edge(&mut self, src: NodeIndex, dst: NodeIndex) {
         let edge = self.graph.add_edge(src, dst, ());
         self.undo.track(Rc::new(move |hive| {
-            // FIXME: No assert for now because an explicitly removed node may had implicitly removed this edge
-            hive.remove_edge(edge);
+            assert!(hive.remove_edge(edge));
         }));
     }
 

@@ -21,7 +21,7 @@ impl<N> IndexMut<NodeIndex> for Vec<Result<Node<N>, ()>> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EdgeIndex(pub(crate) usize);
 
 impl<E> Index<EdgeIndex> for Vec<Result<Edge<E>, ()>> {
