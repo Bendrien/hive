@@ -98,6 +98,10 @@ impl Hive {
                 }
                 xs
             }
+            ["c" | "clear", ref xs @ ..] => {
+                self.clear();
+                xs
+            }
             ["r" | "redo", ref xs @ ..] => {
                 let pos = self.undo.pos + 1;
                 if pos < self.undo.history.len() {
@@ -123,6 +127,19 @@ impl Hive {
             }
             _ => args,
         }
+    }
+
+    pub fn clear(&mut self) {
+        while let Some(pos) = self.undo.pos.checked_sub(1) {
+            self.undo.history[pos].clone()(self);
+            self.undo.pos = pos;
+        }
+        assert!(self.graph.edges.iter().all(Result::is_err));
+        self.graph.edges.clear();
+        assert!(self.graph.nodes.iter().all(Result::is_err));
+        self.graph.nodes.clear();
+        assert!(self.nodes.is_empty());
+        self.undo.history.clear();
     }
 
     fn add_node(&mut self, node: &str) -> &NodeIndex {

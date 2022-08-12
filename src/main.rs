@@ -32,7 +32,11 @@ fn main() {
                     }
                     break;
                 }
-                ["q" | "quit", ..] => return,
+                ["q" | "quit", ..] => {
+                    // Lets clear our hive to early catch asserts on tear down
+                    hive.clear();
+                    return;
+                }
                 [ref xs @ ..] if xs.len() != args.len() => xs,
                 [ignore, ref xs @ ..] => {
                     ignored.push(ignore);
