@@ -193,19 +193,14 @@ impl<N, E> Graph<N, E> {
 
     pub(crate) fn src_dst(&mut self, idx: EdgeIndex) -> Option<[NodeIndex; 2]> {
         self.edges.get(idx.0).and_then(|r| {
-            r.as_ref().ok().and_then(|edge| {
-                edge.next
-                    .into_iter()
-                    .enumerate()
-                    .map(|(dir, mut noge)| {
-                        while let Ok(edge) = noge {
-                            noge = self[edge].next[dir];
-                        }
-                        noge.unwrap_err()
-                    })
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .ok()
+            r.as_ref().ok().map(|edge| {
+                std::array::from_fn(|dir| {
+                    let mut noge = edge.next[dir];
+                    while let Ok(edge_idx) = noge {
+                        noge = self[edge_idx].next[dir];
+                    }
+                    noge.unwrap_err()
+                })
             })
         })
     }
