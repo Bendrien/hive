@@ -17,16 +17,19 @@ pub struct Undo {
 }
 
 impl Undo {
-    fn track(&mut self, action: Rc<dyn Fn(&mut Hive)>) {
+    fn track<F>(&mut self, action: F)
+    where
+        F: Fn(&mut Hive) + 'static,
+    {
         if self.redo {
             // While "redoing" we ignore all the implicitly incoming undo of the redo actions!
-            // Question: Provide action as a generic/impl argument to avoid heap allocation?
+            // FIXME: On redo we get an action just to drop it right away. Can we avoid its construction in the first place?
             return;
         }
         if self.pos == self.history.len() {
             self.pos = self.history.len() + 1
         }
-        self.history.push(action);
+        self.history.push(Rc::new(action));
     }
 
     fn reset(&mut self) {
@@ -124,12 +127,10 @@ impl Hive {
 
     fn add_node(&mut self, node: &str) -> &NodeIndex {
         self.nodes.entry(node.to_string()).or_insert_with(|| {
-            self.undo.track(Rc::new({
+            self.undo.track({
                 let node = node.to_string();
-                move |hive: &mut Hive| {
-                    assert!(hive.remove_node(&node));
-                }
-            }));
+                move |hive: &mut Hive| assert!(hive.remove_node(&node))
+            });
             self.graph.add_node(())
         })
     }
@@ -144,12 +145,12 @@ impl Hive {
                 self.remove_edge(edge);
             }
             let _node = self.graph.remove_node_unchecked(idx);
-            self.undo.track(Rc::new({
+            self.undo.track({
                 let node = node.to_string();
                 move |hive| {
                     hive.add_node(&node);
                 }
-            }));
+            });
             return true;
         }
         false
@@ -157,16 +158,13 @@ impl Hive {
 
     fn add_edge(&mut self, src: NodeIndex, dst: NodeIndex) {
         let edge = self.graph.add_edge(src, dst, ());
-        self.undo.track(Rc::new(move |hive| {
-            assert!(hive.remove_edge(edge));
-        }));
+        self.undo.track(move |hive| assert!(hive.remove_edge(edge)));
     }
 
     fn remove_edge(&mut self, edge: EdgeIndex) -> bool {
         if let Some([src, dst]) = self.graph.src_dst(edge) {
             let _edge = self.graph.remove_edge_unchecked(edge);
-            self.undo
-                .track(Rc::new(move |hive| hive.add_edge(src, dst)));
+            self.undo.track(move |hive| hive.add_edge(src, dst));
             return true;
         }
         false
