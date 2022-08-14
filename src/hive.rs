@@ -71,6 +71,9 @@ impl Hive {
                 self.add_edge(src, dst);
                 self.undo.pile(snapshot);
                 self.undo.reset();
+                if let [">" | "<", _, ..] = xs {
+                    return &args[2..];
+                }
                 xs
             }
             ["d" | "delete", ident, ref xs @ ..] => {
