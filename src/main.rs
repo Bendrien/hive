@@ -22,7 +22,7 @@ fn main() {
         let mut args = &args[..];
         let mut ignored = Vec::new();
 
-        let snapshot = hive.undo.snapshot();
+        let mut snapshot = hive.undo.snapshot();
         loop {
             args = match *hive.parse(args) {
                 [] => {
@@ -30,7 +30,14 @@ fn main() {
                         println!("Ignored input {:?}", ignored);
                         ignored.clear();
                     }
+                    hive.undo.pile(snapshot);
+                    print!("{:?}", hive);
                     break;
+                }
+                [";", ref xs @ ..] => {
+                    hive.undo.pile(snapshot);
+                    snapshot = hive.undo.snapshot();
+                    xs
                 }
                 ["q" | "quit", ..] => {
                     // Lets clear our hive to early catch asserts on tear down
@@ -44,7 +51,5 @@ fn main() {
                 }
             }
         }
-        hive.undo.pile(snapshot);
-        print!("{:?}", hive);
     }
 }
