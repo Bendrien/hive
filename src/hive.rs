@@ -197,7 +197,7 @@ impl Debug for Hive {
         f.write_fmt(format_args!(
             "{}/{}|{}/{}|{}/{}\n",
             self.undo.pos,
-            self.undo.history.len(),
+            (self.undo.history.len() + self.undo.pos) / 2,
             self.graph.nodes.iter().filter(|n| n.is_ok()).count(),
             self.graph.nodes.len(),
             self.graph.edges.iter().filter(|n| n.is_ok()).count(),
