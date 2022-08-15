@@ -1,0 +1,29 @@
+alpha_ = { ASCII_ALPHA | "_" }
+number = @{ ASCII_DIGIT+ }
+ident = @{ alpha_ ~ (alpha_ | ASCII_DIGIT)* }
+edge = @{ number }
+node = @{ ident }
+
+from = { "<" }
+to = { ">" }
+pipe = { node ~ ((from | to) ~ node)+ }
+
+delete = { ("delete" | "d") ~ (edge | node) }
+
+smaller_two = _{ "0"* ~ "1"? ~ !ASCII_DIGIT+ }
+greater_one = { !smaller_two ~ number }
+pile = { ("pile" | "p") ~ greater_one }
+
+undo = { ("undo" | "u") ~ greater_one? }
+redo = { ("redo" | "r") ~ greater_one? }
+
+clear = { "clear" | "c" }
+quit = { "quit" | "q" }
+
+action = _{ pipe | delete }
+action_seq = { action+ }
+history = { pile | undo | redo | clear | quit }
+expr = { action_seq | history }
+command = { expr+ ~ (";" ~ expr+)* }
+
+WHITESPACE = _{ " " }

@@ -13,7 +13,7 @@ pub struct Hive {
 pub struct Undo {
     history: Vec<Rc<dyn Fn(&mut Hive)>>,
     pos: usize,
-    redo: bool,
+    pause: bool,
 }
 
 impl Undo {
@@ -21,9 +21,8 @@ impl Undo {
     where
         F: Fn(&mut Hive) + 'static,
     {
-        if self.redo {
-            // While "redoing" we ignore all the implicitly incoming undo of the redo actions!
-            // FIXME: On redo we get an action just to drop it right away. Can we avoid its construction in the first place?
+        if self.pause {
+            // FIXME: On pause we get an action just to drop it right away. Can we avoid its construction in the first place?
             return;
         }
         if self.pos == self.history.len() {
@@ -45,7 +44,7 @@ impl Undo {
             // Building a pile with less then 2 elements equals doing nothing here.
             return;
         }
-        assert!(!self.redo);
+        assert!(!self.pause);
 
         let pile = self.history.split_off(snapshot);
         self.history.push(Rc::new(move |hive| {
@@ -55,81 +54,52 @@ impl Undo {
             }
             hive.undo.pile(snapshot);
         }));
-        if self.pos > self.history.len() {
-            self.pos = self.history.len()
-        }
+        self.reset();
     }
 }
 
 impl Hive {
-    pub fn parse<'a>(&mut self, args: &'a [&'a str]) -> &'a [&'a str] {
-        match *args {
-            [src, ">", dst, ref xs @ ..] | [dst, "<", src, ref xs @ ..] => {
-                let snapshot = self.undo.snapshot();
-                let src = *self.add_node(src);
-                let dst = *self.add_node(dst);
-                self.add_edge(src, dst);
-                self.undo.pile(snapshot);
-                self.undo.reset();
-                if let [">" | "<", _, ..] = xs {
-                    return &args[2..];
-                }
-                xs
-            }
-            ["d" | "delete", ident, ref xs @ ..] => {
-                if let Ok(idx) = ident.parse() {
-                    if self.remove_edge(EdgeIndex(idx)) {
-                        self.undo.reset();
-                        return xs;
-                    }
-                }
+    pub fn pipe(&mut self, src: &str, dst: &str) {
+        let src = *self.add_node(src);
+        let dst = *self.add_node(dst);
+        self.add_edge(src, dst);
+    }
 
-                let snapshot = self.undo.snapshot();
-                if self.remove_node(ident) {
-                    self.undo.pile(snapshot);
-                    self.undo.reset();
-                    return xs;
-                }
-                args
+    pub fn delete_edge(&mut self, idx: usize) {
+        self.remove_edge(EdgeIndex(idx));
+    }
+
+    pub fn undo(&mut self, n: usize) {
+        for i in 0..n {
+            if let Some(pos) = self.undo.pos.checked_sub(1) {
+                self.undo.history[pos].clone()(self);
+                self.undo.pos = pos;
+            } else {
+                let left = n - i;
+                println!("{left} undo{} ignored", if left > 1 { "'s" } else { "" });
+                return;
             }
-            ["u" | "undo", ref xs @ ..] => {
-                if let Some(pos) = self.undo.pos.checked_sub(1) {
-                    self.undo.history[pos].clone()(self);
-                    self.undo.pos = pos;
-                } else {
-                    println!("Nothing to undo")
-                }
-                xs
-            }
-            ["c" | "clear", ref xs @ ..] => {
-                self.clear();
-                xs
-            }
-            ["r" | "redo", ref xs @ ..] => {
-                let pos = self.undo.pos + 1;
-                if pos < self.undo.history.len() {
-                    self.undo.redo = true;
-                    // The most recent undo of an undo aka redo is being tracked at the end of the history!
-                    // Its origin is still available at idx and has the same effect. Therefore we can remove
-                    // the redo from the history here.
-                    self.undo.history.pop().unwrap()(self);
-                    self.undo.redo = false;
-                    self.undo.pos = pos;
-                } else {
-                    println!("Nothing to redo")
-                }
-                xs
-            }
-            ["p" | "pile", n, ref xs @ ..] => {
-                if let Ok(n) = n.parse() {
-                    let snapshot = self.undo.snapshot();
-                    self.undo.pile(snapshot.saturating_sub(n));
-                    return xs;
-                }
-                args
-            }
-            _ => args,
         }
+    }
+
+    pub fn redo(&mut self, n: usize) {
+        // While "redoing" we want to ignore all the implicitly incoming undo of the redo actions!
+        self.undo.pause = true;
+        for i in 0..n {
+            let pos = self.undo.pos + 1;
+            if pos < self.undo.history.len() {
+                // The most recent undo of an undo aka redo is being tracked at the end of the history!
+                // Its origin is still available at idx and has the same effect. Therefore we can remove
+                // the redo from the history here.
+                self.undo.history.pop().unwrap()(self);
+                self.undo.pos = pos;
+            } else {
+                let left = n - i;
+                println!("{left} redo{} ignored", if left > 1 { "'s" } else { "" });
+                break;
+            }
+        }
+        self.undo.pause = false;
     }
 
     pub fn clear(&mut self) {
@@ -155,7 +125,7 @@ impl Hive {
         })
     }
 
-    fn remove_node(&mut self, node: &str) -> bool {
+    pub fn remove_node(&mut self, node: &str) -> bool {
         if let Some(idx) = self.nodes.remove(node) {
             let mut edges = (0..2)
                 .flat_map(|dir| self.graph.edges(idx, dir))
@@ -164,7 +134,7 @@ impl Hive {
             for edge in edges.into_iter().rev() {
                 self.remove_edge(edge);
             }
-            let _node = self.graph.remove_node_unchecked(idx);
+            self.graph.remove_node_unchecked(idx);
             self.undo.track({
                 let node = node.to_string();
                 move |hive| {
@@ -183,7 +153,7 @@ impl Hive {
 
     fn remove_edge(&mut self, edge: EdgeIndex) -> bool {
         if let Some([src, dst]) = self.graph.src_dst(edge) {
-            let _edge = self.graph.remove_edge_unchecked(edge);
+            self.graph.remove_edge_unchecked(edge);
             self.undo.track(move |hive| hive.add_edge(src, dst));
             return true;
         }
